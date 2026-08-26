@@ -1,0 +1,58 @@
+{
+  "cadence": {
+    "lower_bound": 76.8136,
+    "upper_bound": 146.3928,
+    "q25": 102.9058,
+    "q75": 120.3006,
+    "median": 113.7465,
+    "mean": 112.4328
+  },
+  "sample_entropy": {
+    "lower_bound": 0.3919,
+    "upper_bound": 0.5528,
+    "q25": 0.4522,
+    "q75": 0.4925,
+    "median": 0.4702,
+    "mean": 0.4735
+  },
+  "freeze_index": {
+    "lower_bound": 0,
+    "upper_bound": 4.8031,
+    "q25": 1.1699,
+    "q75": 2.6232,
+    "median": 1.8048,
+    "mean": 1.9892
+  },
+  "step_time_cv": {
+    "lower_bound": 0,
+    "upper_bound": 0.2773,
+    "q25": 0.065,
+    "q75": 0.15,
+    "median": 0.1257,
+    "mean": 0.1238
+  },
+  "X_std": {
+    "lower_bound": 0.147,
+    "upper_bound": 0.3129,
+    "q25": 0.2092,
+    "q75": 0.2507,
+    "median": 0.2263,
+    "mean": 0.232
+  },
+  "X_rms": {
+    "lower_bound": 0.3455,
+    "upper_bound": 0.6768,
+    "q25": 0.4698,
+    "q75": 0.5526,
+    "median": 0.4955,
+    "mean": 0.503
+  },
+  "X_jerk_std": {
+    "lower_bound": 2.5467,
+    "upper_bound": 7.8499,
+    "q25": 4.5354,
+    "q75": 5.8612,
+    "median": 5.3145,
+    "mean": 5.1823
+  }
+}

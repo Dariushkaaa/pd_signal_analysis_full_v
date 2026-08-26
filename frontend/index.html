@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <title>PD Signal Analysis</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Nunito', system-ui, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%);
+      color: #4a5568;
+      min-height: 100vh;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow: 0 4px 20px rgba(149, 157, 165, 0.1);
+      border: 1px solid rgba(200, 210, 220, 0.4);
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      box-shadow: 0 8px 30px rgba(149, 157, 165, 0.15);
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #7fb3d5, #a29bfe, #fd79a8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .drop-zone {
+      border: 2px dashed #b8c5d6;
+      border-radius: 16px;
+      background: rgba(248, 250, 252, 0.6);
+      transition: all 0.3s;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: #7fb3d5;
+      background: rgba(127, 179, 213, 0.08);
+    }
+
+    .step-indicator {
+      background: #ffffff;
+      border: 2px solid #e2e8f0;
+      transition: all 0.3s;
+    }
+
+    .step-indicator.active {
+      border-color: #a29bfe;
+      background: rgba(162, 155, 254, 0.08);
+    }
+
+    .step-indicator.done {
+      border-color: #81ecec;
+      background: rgba(129, 236, 236, 0.1);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #a29bfe, #74b9ff);
+      color: white;
+      border-radius: 14px;
+      font-weight: 700;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(162, 155, 254, 0.3);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(162, 155, 254, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #64748b;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: all 0.3s;
+      border: 1px solid #e2e8f0;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+      color: #475569;
+    }
+
+    .btn-edit {
+      background: linear-gradient(135deg, #fdcb6e, #e17055);
+      color: white;
+      border-radius: 12px;
+      font-weight: 700;
+      transition: all 0.3s;
+    }
+
+    .btn-edit:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-edit.active {
+      background: linear-gradient(135deg, #e17055, #d63031);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(225, 112, 85, 0.4);
+      }
+
+      50% {
+        box-shadow: 0 0 0 8px rgba(225, 112, 85, 0);
+      }
+    }
+
+    .progress-bar {
+      background: linear-gradient(90deg, #a29bfe, #74b9ff, #81ecec);
+      background-size: 200% 100%;
+      animation: shimmer 2s linear infinite;
+      border-radius: 999px;
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: 200% 0
+      }
+
+      100% {
+        background-position: -200% 0
+      }
+    }
+
+    .result-healthy {
+      background: linear-gradient(135deg, #a8e6cf, #88d8b0);
+      color: #2d6a4f;
+    }
+
+    .result-pd {
+      background: linear-gradient(135deg, #ffb7b2, #ff9a9e);
+      color: #7a1f1f;
+    }
+
+    .feature-card {
+      background: #fafbfc;
+      border-radius: 14px;
+      border: 1px solid #e8eef5;
+      padding: 16px;
+      transition: all 0.3s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(149, 157, 165, 0.15);
+    }
+
+    .feature-card.model-feature {
+      background: #f0f4ff;
+      border: 1px solid #c7d2fe;
+    }
+
+    .feature-card.model-feature:hover {
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.15);
+    }
+
+    .feature-name {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .feature-value {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .feature-value.normal {
+      color: #10b981;
+    }
+
+    .feature-value.abnormal {
+      color: #ef4444;
+    }
+
+    .norm-bar {
+      position: relative;
+      height: 12px;
+      background: #fee2e2;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .norm-bar .green-zone {
+      position: absolute;
+      height: 100%;
+      background: linear-gradient(90deg, #6bcf7f, #10b981);
+      border-radius: 6px;
+    }
+
+    .norm-bar .marker {
+      position: absolute;
+      top: -4px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      transform: translateX(-50%);
+      border: 3px solid #ffffff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+    }
+
+    .norm-bar .marker.normal {
+      background: #10b981;
+    }
+
+    .norm-bar .marker.abnormal {
+      background: #ef4444;
+    }
+
+    .norm-range-text {
+      font-size: 11px;
+      color: #64748b;
+      text-align: center;
+      margin-top: 6px;
+      font-weight: 600;
+    }
+
+    .norm-status {
+      font-size: 11px;
+      text-align: center;
+      margin-top: 4px;
+      font-weight: 700;
+    }
+
+    .norm-status.normal {
+      color: #10b981;
+    }
+
+    .norm-status.abnormal {
+      color: #ef4444;
+    }
+
+    .log-entry {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+
+    .scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+
+    .scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e0;
+      border-radius: 3px;
+    }
+
+    .edit-banner {
+      background: linear-gradient(90deg, #fdcb6e, #e17055);
+      color: white;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .point-card {
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+
+    .point-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .point-card.selected {
+      ring: 2px;
+      ring-color: #a855f7;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container mx-auto px-4 py-8 max-w-7xl">
+    <div class="text-center mb-8">
+      <h1 class="text-5xl font-extrabold gradient-text mb-2">PD Signal Analysis</h1>
+      <p class="text-slate-500">Анализ сигналов для классификации болезни Паркинсона</p>
+    </div>
+
+    <div class="flex items-center justify-center mb-8 gap-3 flex-wrap">
+      <div id="step-ind-1"
+        class="step-indicator flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold">
+        <span
+          class="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold">1</span><span>Данные</span>
+      </div>
+      <div class="w-10 h-0.5 bg-slate-300"></div>
+      <div id="step-ind-2"
+        class="step-indicator flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold">
+        <span
+          class="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold">2</span><span>Модели</span>
+      </div>
+      <div class="w-10 h-0.5 bg-slate-300"></div>
+      <div id="step-ind-3"
+        class="step-indicator flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold">
+        <span
+          class="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold">3</span><span>Анализ</span>
+      </div>
+      <div class="w-10 h-0.5 bg-slate-300"></div>
+      <div id="step-ind-4"
+        class="step-indicator flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold">
+        <span
+          class="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold">4</span><span>Результат</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Левая колонка: управление -->
+      <div class="lg:col-span-1 space-y-4">
+        <div id="step1" class="card p-5">
+          <div class="flex items-center gap-3 mb-4">
+            <div
+              class="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-2xl">
+              📁</div>
+            <div>
+              <h3 class="font-bold text-slate-700">Загрузка данных</h3>
+              <p class="text-xs text-slate-500">CSV файлы акселерометра и гироскопа</p>
+            </div>
+          </div>
+          <div id="dropZone" class="drop-zone p-6 text-center cursor-pointer mb-3">
+            <div class="text-4xl mb-2">📂</div>
+            <p class="text-sm text-slate-600 mb-1">Перетащите папку или кликните</p>
+            <p class="text-xs text-slate-400">Accelerometer + Gyroscope CSV</p>
+            <input type="file" id="fileInput" class="hidden" multiple webkitdirectory directory>
+          </div>
+          <div id="dataStatus" class="text-xs hidden">
+            <div class="flex items-center gap-2 text-green-600 bg-green-50 p-2 rounded-lg">
+              <span>✅</span><span id="dataStatusText">Данные загружены</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="step2" class="card p-5">
+          <div class="flex items-center gap-3 mb-4">
+            <div
+              class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center text-2xl">
+              🧠</div>
+            <div>
+              <h3 class="font-bold text-slate-700">Статус моделей</h3>
+              <p class="text-xs text-slate-500">Автоматическая загрузка с сервера</p>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50">
+              <span class="text-sm">🎯 Детектор</span>
+              <span id="detStatus" class="text-xs text-slate-400">⏳ Загрузка...</span>
+            </div>
+            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50">
+              <span class="text-sm">🧩 Сегментатор</span>
+              <span id="segStatus" class="text-xs text-slate-400"> Загрузка...</span>
+            </div>
+            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50">
+              <span class="text-sm">🤖 Классификатор</span>
+              <span id="clfStatus" class="text-xs text-slate-400">⏳ Загрузка...</span>
+            </div>
+            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50">
+              <span class="text-sm"> Границы нормы</span>
+              <span id="boundsStatus" class="text-xs text-slate-400">⏳ Загрузка...</span>
+            </div>
+          </div>
+          <div id="modelsReady" class="hidden mt-3 p-3 rounded-xl bg-green-50 border border-green-200">
+            <div class="text-sm text-green-700 font-semibold text-center">✅ Все системы готовы</div>
+          </div>
+        </div>
+
+        <div id="step3" class="card p-5">
+          <div class="flex items-center gap-3 mb-4">
+            <div
+              class="w-11 h-11 rounded-xl bg-gradient-to-br from-pink-100 to-pink-200 flex items-center justify-center text-2xl">
+              ⚡</div>
+            <div>
+              <h3 class="font-bold text-slate-700">Запуск анализа</h3>
+              <p class="text-xs text-slate-500">Обработка и классификация</p>
+            </div>
+          </div>
+          <button id="runBtn" disabled
+            class="btn-primary w-full py-3.5 disabled:opacity-40 disabled:cursor-not-allowed">
+            ▶ Запустить анализ
+          </button>
+          <div id="progressContainer" class="mt-3 hidden">
+            <div class="flex justify-between text-xs text-slate-500 mb-1">
+              <span id="progressLabel">Обработка...</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+              <div id="progressBar" class="h-full progress-bar transition-all" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-sm text-slate-700"> Лог</h3>
+            <button id="clearLogBtn" class="text-xs text-slate-400 hover:text-slate-600">Очистить</button>
+          </div>
+          <div id="logContainer" class="scrollbar bg-slate-50 rounded-xl p-3 h-40 overflow-y-auto space-y-1">
+            <div class="log-entry text-slate-400">Ожидание...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Правая колонка: результаты -->
+      <div class="lg:col-span-2 space-y-4">
+
+        <!-- 1. Результат классификации -->
+        <div id="resultCard" class="card p-6 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-slate-700">Результат классификации</h3>
+            <div id="confidenceBadge" class="px-4 py-1.5 rounded-full text-xs font-bold"></div>
+          </div>
+          <div id="resultContent" class="grid grid-cols-2 gap-4"></div>
+        </div>
+
+        <!-- 2. Сигнал с выделенными сегментами и точками -->
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h3 class="font-bold text-slate-700">📈 Сигнал и выделенные сегменты</h3>
+            <div class="flex gap-2">
+              <button id="editPointsBtn" class="btn-edit px-4 py-2 text-sm hidden">✏️ Редактировать точки</button>
+              <button id="savePointsBtn" class="btn-primary px-4 py-2 text-sm hidden">💾 Сохранить и
+                пересчитать</button>
+              <button id="cancelEditBtn" class="btn-secondary px-4 py-2 text-sm hidden">✕ Отмена</button>
+            </div>
+          </div>
+          <div id="editBanner" class="edit-banner hidden">
+            <span>✏️</span>
+            <span>РЕЖИМ РЕДАКТИРОВАНИЯ: Кликните на маркер точки, затем кликните на новое место на графике</span>
+          </div>
+          <div id="signalPlot" style="height:420px;"></div>
+        </div>
+
+        <!-- 3. Ключевые точки -->
+        <div id="pointsCard" class="card p-5 hidden">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-slate-700">🎯 Ключевые точки</h3>
+            <span class="text-xs text-slate-500" id="editHint">Кликните «Редактировать» для ручного выбора</span>
+          </div>
+          <div id="pointsGrid" class="grid grid-cols-5 gap-2"></div>
+        </div>
+
+        <!-- 4. Обработанные сегменты -->
+        <div id="segmentsCard" class="card p-5 hidden">
+          <h3 class="font-bold mb-3 text-slate-700">🦶 Обработанные сегменты (фильтрованные)</h3>
+          <div id="segmentsPlot" style="height:350px;"></div>
+        </div>
+
+        <!-- 5. Признаки для модели (с нормой) -->
+        <div id="modelFeaturesCard" class="card p-5 hidden">
+          <h3 class="font-bold mb-1 text-slate-700">📊 Признаки для модели</h3>
+          <p class="text-xs text-slate-500 mb-4">Усредненные по двум сегментам. Зеленая зона — научная норма.</p>
+          <div id="modelFeaturesGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        </div>
+
+        <!-- 6. Все рассчитанные признаки -->
+        <div id="allFeaturesCard" class="card p-5 hidden">
+          <h3 class="font-bold mb-1 text-slate-700">📋 Все рассчитанные признаки</h3>
+          <p class="text-xs text-slate-500 mb-4">Полный набор характеристик, извлеченных из выделенных сегментов.</p>
+          <div id="allFeaturesGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:8000';
+    const STATE = {
+      accFile: null,
+      gyroFile: null,
+      currentResult: null,
+      editMode: false,
+      editablePoints: { T1: null, T2: null, T3: null, T4: null, T5: null },
+      originalPoints: null,
+      selectedPoint: null
+    };
+    let modelsReadyLogged = false;
+
+    const POINT_COLORS = { 'T1': '#6bcf7f', 'T2': '#fdcb6e', 'T3': '#74b9ff', 'T4': '#fdcb6e', 'T5': '#ff8b94' };
+    const POINT_LABELS = { 'T1': 'T1 (старт)', 'T2': 'T2 (поворот 1)', 'T3': 'T3 (ходьба 2)', 'T4': 'T4 (поворот 2)', 'T5': 'T5 (конец)' };
+
+    const FEATURE_NAMES_RU = {
+      'cadence': 'Каденс',
+      'sample_entropy': 'Энтропия',
+      'freeze_index': 'Индекс застывания',
+      'step_time_cv': 'Вариация шага',
+      'X_std': 'Стд. откл. (X)',
+      'X_rms': 'RMS (X)',
+      'X_jerk_std': 'Рывок (X)'
+    };
+
+    function log(msg, type = 'info') {
+      const c = document.getElementById('logContainer');
+      const colors = { info: 'text-slate-500', success: 'text-green-600', error: 'text-red-500', warn: 'text-orange-500', step: 'text-blue-500' };
+      const icons = { info: '○', success: '✓', error: '✗', warn: '⚠', step: '▶' };
+      const t = new Date().toLocaleTimeString();
+      const e = document.createElement('div');
+      e.className = 'log-entry ' + colors[type];
+      e.innerHTML = '<span class="text-slate-400">[' + t + ']</span> <b>' + icons[type] + '</b> ' + msg;
+      c.appendChild(e);
+      c.scrollTop = c.scrollHeight;
+    }
+
+    document.getElementById('clearLogBtn').onclick = () => {
+      document.getElementById('logContainer').innerHTML = '<div class="log-entry text-slate-400">Лог очищен</div>';
+    };
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    dropZone.onclick = () => fileInput.click();
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
+    dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); };
+    fileInput.onchange = (e) => handleFiles(e.target.files);
+
+    function handleFiles(files) {
+      const fl = Array.from(files);
+      const accFile = fl.find(f => /accelerometer/i.test(f.name) && f.name.endsWith('.csv'));
+      const gyrFile = fl.find(f => /gyroscope/i.test(f.name) && f.name.endsWith('.csv'));
+      if (!accFile || !gyrFile) { log('Не найдены нужные CSV файлы', 'error'); return; }
+      STATE.accFile = accFile; STATE.gyroFile = gyrFile;
+      document.getElementById('dataStatus').classList.remove('hidden');
+      document.getElementById('dataStatusText').textContent = accFile.name + ' + ' + gyrFile.name;
+      document.getElementById('step1').classList.add('done');
+      document.getElementById('step-ind-1').classList.add('done');
+      log('Данные загружены', 'success');
+      checkModelsStatus();
+    }
+
+    async function checkModelsStatus() {
+      try {
+        const response = await fetch(API_URL + '/api/models-status');
+        if (!response.ok) return;
+        const status = await response.json();
+        const setStatus = (id, isReady) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.textContent = isReady ? '✓ Готово' : '⏳ Загрузка...';
+            el.className = 'text-xs ' + (isReady ? 'text-green-600' : 'text-slate-400');
+          }
+        };
+        setStatus('detStatus', status.detector);
+        setStatus('segStatus', status.segmenter);
+        setStatus('clfStatus', status.classifier);
+        setStatus('boundsStatus', status.feature_bounds);
+
+        if (status.ready && !modelsReadyLogged) {
+          document.getElementById('modelsReady').classList.remove('hidden');
+          document.getElementById('step2').classList.add('done');
+          document.getElementById('step-ind-2').classList.add('done');
+          log('Все системы готовы к анализу', 'success');
+          modelsReadyLogged = true;
+        }
+
+        const runBtn = document.getElementById('runBtn');
+        const step1Done = STATE.accFile && STATE.gyroFile;
+        if (runBtn) runBtn.disabled = !(step1Done && status.ready);
+      } catch (err) { }
+    }
+
+    setInterval(checkModelsStatus, 2000);
+
+    document.getElementById('runBtn').onclick = async () => {
+      log('Запуск полного пайплайна', 'step');
+      const runBtn = document.getElementById('runBtn');
+      runBtn.disabled = true;
+      document.getElementById('progressContainer').classList.remove('hidden');
+      document.getElementById('step3').classList.add('active');
+      document.getElementById('progressLabel').textContent = 'Отправка данных...';
+      document.getElementById('progressPercent').textContent = '10%';
+      document.getElementById('progressBar').style.width = '10%';
+
+      try {
+        const formData = new FormData();
+        formData.append('acc_file', STATE.accFile);
+        formData.append('gyro_file', STATE.gyroFile);
+        const response = await fetch(API_URL + '/api/process-signal', { method: 'POST', body: formData });
+        if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + await response.text());
+
+        document.getElementById('progressLabel').textContent = 'Обработка...';
+        document.getElementById('progressPercent').textContent = '60%';
+        document.getElementById('progressBar').style.width = '60%';
+
+        const result = await response.json();
+        STATE.currentResult = result;
+
+        document.getElementById('progressLabel').textContent = 'Отрисовка...';
+        document.getElementById('progressPercent').textContent = '90%';
+        document.getElementById('progressBar').style.width = '90%';
+
+        displayResults(result);
+
+        document.getElementById('progressBar').style.width = '100%';
+        document.getElementById('progressPercent').textContent = '100%';
+        document.getElementById('step3').classList.add('done');
+        document.getElementById('step-ind-3').classList.add('done');
+        document.getElementById('step-ind-4').classList.add('done');
+        log('Анализ завершён', 'success');
+      } catch (err) {
+        log('Ошибка: ' + err.message, 'error');
+      } finally {
+        runBtn.disabled = false;
+      }
+    };
+
+    function displayResults(result) {
+      const resultCard = document.getElementById('resultCard');
+      resultCard.classList.remove('hidden');
+      const isPD = result.prediction === 1;
+      resultCard.className = 'card p-6 ' + (isPD ? 'result-pd' : 'result-healthy');
+
+      document.getElementById('resultContent').innerHTML =
+        '<div class="text-center">' +
+        '<div class="text-6xl mb-2">' + (isPD ? '🏥' : '✓') + '</div>' +
+        '<div class="text-3xl font-extrabold mb-1">' + (isPD ? "Parkinson's Disease" : 'Healthy') + '</div>' +
+        '<div class="text-sm opacity-80">' + (isPD ? 'Обнаружены признаки' : 'Патология не обнаружена') + '</div>' +
+        '</div>' +
+        '<div class="text-center">' +
+        '<div class="text-5xl font-extrabold mb-2">' + (result.probability * 100).toFixed(1) + '%</div>' +
+        '<div class="text-sm opacity-80">Уверенность модели</div>' +
+        '</div>';
+
+      const confBadge = document.getElementById('confidenceBadge');
+      confBadge.className = 'px-4 py-1.5 rounded-full text-xs font-bold ' + (isPD ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800');
+      confBadge.textContent = isPD ? 'PD DETECTED' : 'HEALTHY';
+
+      if (result.points) {
+        document.getElementById('pointsCard').classList.remove('hidden');
+        updatePointsDisplay();
+      }
+
+      if (result.feature_norm) {
+        document.getElementById('modelFeaturesCard').classList.remove('hidden');
+        const modelGrid = document.getElementById('modelFeaturesGrid');
+        modelGrid.innerHTML = '';
+        for (const key in result.feature_norm) {
+          if (!Object.prototype.hasOwnProperty.call(result.feature_norm, key)) continue;
+          const data = result.feature_norm[key];
+          const name = FEATURE_NAMES_RU[key] || key;
+          const val = data.value;
+          const isNorm = data.in_norm === true;
+          const lower = data.lower_bound !== undefined ? data.lower_bound : (val !== null ? val * 0.8 : 0);
+          const upper = data.upper_bound !== undefined ? data.upper_bound : (val !== null ? val * 1.2 : 1);
+          const minScale = Math.min(lower * 0.5, val !== null ? val * 0.5 : 0, 0);
+          const maxScale = Math.max(upper * 1.5, val !== null ? val * 1.5 : 1, 1);
+          const range = maxScale - minScale || 1;
+          const leftPercent = ((lower - minScale) / range) * 100;
+          const widthPercent = ((upper - lower) / range) * 100;
+          const markerPercent = val !== null ? ((val - minScale) / range) * 100 : 50;
+          const clampedMarker = Math.max(2, Math.min(98, markerPercent));
+
+          const card = document.createElement('div');
+          card.className = 'feature-card model-feature';
+          card.innerHTML =
+            '<div class="feature-name">' + name + '</div>' +
+            '<div class="feature-value ' + (isNorm ? 'normal' : 'abnormal') + '">' +
+            (val !== null ? Number(val).toFixed(3) : 'N/A') +
+            '</div>' +
+            '<div class="norm-bar">' +
+            '<div class="green-zone" style="left:' + leftPercent + '%;width:' + widthPercent + '%"></div>' +
+            '<div class="marker ' + (isNorm ? 'normal' : 'abnormal') + '" style="left:' + clampedMarker + '%"></div>' +
+            '</div>' +
+            '<div class="norm-range-text">Норма: ' + Number(lower).toFixed(2) + ' – ' + Number(upper).toFixed(2) + '</div>' +
+            '<div class="norm-status ' + (isNorm ? 'normal' : 'abnormal') + '">' + (data.message || '') + '</div>';
+          modelGrid.appendChild(card);
+        }
+      }
+
+      if (result.all_features) {
+        document.getElementById('allFeaturesCard').classList.remove('hidden');
+        const allGrid = document.getElementById('allFeaturesGrid');
+        allGrid.innerHTML = '';
+        const allFeatureNames = {
+          'step_time_mean': 'Среднее время шага', 'step_time_std': 'Стд. время шага',
+          'step_time_cv': 'Вариация времени шага', 'cadence': 'Каденс', 'n_steps': 'Количество шагов',
+          'sample_entropy': 'Энтропия выборки', 'freeze_index': 'Индекс застывания',
+          'x_rms': 'RMS (ось X)', 'X_rms': 'RMS (ось X)',
+          'x_std': 'Стд. откл. (ось X)', 'X_std': 'Стд. откл. (ось X)',
+          'x_jerk_std': 'Рывок (ось X)', 'X_jerk_std': 'Рывок (ось X)',
+          'y_rms': 'RMS (ось Y)', 'y_std': 'Стд. откл. (ось Y)', 'y_jerk_std': 'Рывок (ось Y)',
+          'z_rms': 'RMS (ось Z)', 'z_std': 'Стд. откл. (ось Z)', 'z_jerk_std': 'Рывок (ось Z)',
+          'mag_rms': 'RMS (magnitude)', 'mag_std': 'Стд. откл. (magnitude)', 'mag_jerk_std': 'Рывок (magnitude)'
+        };
+        for (const key in result.all_features) {
+          if (!Object.prototype.hasOwnProperty.call(result.all_features, key)) continue;
+          const val = result.all_features[key];
+          const name = allFeatureNames[key] || key;
+          const valStr = (val !== null && val !== undefined) ? Number(val).toFixed(4) : 'N/A';
+          const card = document.createElement('div');
+          card.className = 'feature-card';
+          card.innerHTML = '<div class="feature-name">' + name + '</div>' +
+            '<div class="feature-value" style="color: #74b9ff; font-size: 18px;">' + valStr + '</div>';
+          allGrid.appendChild(card);
+        }
+      }
+
+      updatePlots(result);
+      updateSegmentsPlot(result);
+      document.getElementById('editPointsBtn').classList.remove('hidden');
+    }
+
+    function updatePointsDisplay() {
+      const pointsGrid = document.getElementById('pointsGrid');
+      if (!pointsGrid) return;
+      let html = '';
+      const keys = ['T1', 'T2', 'T3', 'T4', 'T5'];
+      for (let i = 0; i < 5; i++) {
+        const k = keys[i];
+        const val = STATE.editMode ? STATE.editablePoints[k] : STATE.currentResult.points[k];
+        const originalVal = STATE.originalPoints ? STATE.originalPoints[k] : null;
+        const changed = originalVal !== null && val !== null && Math.abs(originalVal - val) > 0.01;
+        const isSelected = STATE.selectedPoint === k;
+        const borderClass = isSelected ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-300' :
+          (changed ? 'border-orange-400 bg-orange-50' : 'border-slate-200 bg-slate-50');
+        const valStr = (val !== null && val !== undefined) ? Number(val).toFixed(2) : '—';
+        html += '<div class="p-3 rounded-xl ' + borderClass + ' border text-center point-card" ' +
+          'onclick="selectPoint(\'' + k + '\')">' +
+          '<div class="text-xs text-slate-500 mb-1">' + POINT_LABELS[k] + '</div>' +
+          '<div class="text-lg font-bold text-slate-700">' + valStr + ' с</div>' +
+          (isSelected ? '<div class="text-[10px] text-purple-600 font-semibold mt-1">← выбрана</div>' : '') +
+          '</div>';
+      }
+      pointsGrid.innerHTML = html;
+    }
+
+    window.selectPoint = function (pointKey) {
+      if (!STATE.editMode) return;
+      STATE.selectedPoint = pointKey;
+      updatePointsDisplay();
+      updatePlotsWithEditablePoints();
+      log('Выбрана точка ' + pointKey + '. Кликните на графике для перемещения.', 'info');
+    };
+
+    function updatePlots(result) {
+      if (!result || !result.full_signal || !result.full_signal.time || !result.full_signal.magnitude) return;
+      const timeData = result.full_signal.time;
+      const magnitudeData = result.full_signal.magnitude;
+      if (timeData.length === 0) return;
+
+      const minMag = Math.min.apply(null, magnitudeData);
+      const maxMag = Math.max.apply(null, magnitudeData);
+      const range = maxMag - minMag || 1;
+
+      const shapes = [];
+      ['T1', 'T2', 'T3', 'T4', 'T5'].forEach(point => {
+        const tVal = result.points ? result.points[point] : null;
+        if (tVal !== null && tVal !== undefined) {
+          shapes.push({
+            type: 'line', x0: tVal, x1: tVal,
+            y0: minMag - range * 0.05, y1: maxMag + range * 0.05,
+            line: { color: POINT_COLORS[point], width: 3, dash: 'dash' }
+          });
+        }
+      });
+
+      if (result.segments) {
+        if (result.segments.segment_1) {
+          shapes.push({
+            type: 'rect', x0: result.segments.segment_1.start_time, x1: result.segments.segment_1.end_time,
+            y0: minMag - range * 0.05, y1: maxMag + range * 0.05,
+            fillcolor: 'rgba(107, 207, 127, 0.15)', line: { width: 0 }
+          });
+        }
+        if (result.segments.segment_2) {
+          shapes.push({
+            type: 'rect', x0: result.segments.segment_2.start_time, x1: result.segments.segment_2.end_time,
+            y0: minMag - range * 0.05, y1: maxMag + range * 0.05,
+            fillcolor: 'rgba(116, 185, 255, 0.15)', line: { width: 0 }
+          });
+        }
+      }
+
+      const pointTraces = [];
+      ['T1', 'T2', 'T3', 'T4', 'T5'].forEach(point => {
+        const tVal = result.points ? result.points[point] : null;
+        if (tVal !== null && tVal !== undefined) {
+          const isSelected = STATE.selectedPoint === point;
+          pointTraces.push({
+            x: [tVal], y: [maxMag + range * 0.03],
+            mode: 'markers+text',
+            marker: {
+              color: POINT_COLORS[point],
+              size: isSelected ? 24 : 16,
+              line: { color: isSelected ? '#a855f7' : 'white', width: isSelected ? 4 : 2 },
+              symbol: 'circle'
+            },
+            text: [point], textposition: 'top center',
+            textfont: { color: POINT_COLORS[point], size: 12, family: 'Nunito', weight: 'bold' },
+            name: point, hoverinfo: 'text',
+            hovertext: [POINT_LABELS[point] + ': ' + Number(tVal).toFixed(2) + ' с' + (isSelected ? ' (ВЫБРАНА - кликните для перемещения)' : '')],
+            showlegend: false
+          });
+        }
+      });
+
+      const traces = [{
+        x: timeData, y: magnitudeData, mode: 'lines', name: 'Magnitude',
+        line: { color: '#74b9ff', width: 1.5 }
+      }].concat(pointTraces);
+
+      const layout = {
+        paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#fafbfc',
+        font: { color: '#4a5568', family: 'Nunito' },
+        margin: { l: 50, r: 30, t: 30, b: 40 },
+        xaxis: { title: 'Время (с)', gridcolor: '#e2e8f0', range: [0, Math.max.apply(null, timeData)] },
+        yaxis: { title: 'Amplitude', gridcolor: '#e2e8f0', range: [minMag - range * 0.05, maxMag + range * 0.1] },
+        shapes: shapes, showlegend: false,
+        dragmode: 'pan',
+        hovermode: 'closest'
+      };
+
+      Plotly.newPlot('signalPlot', traces, layout, { responsive: true, displayModeBar: true });
+
+      const plotDiv = document.getElementById('signalPlot');
+      plotDiv.removeAllListeners('plotly_click');
+      if (STATE.editMode) {
+        plotDiv.on('plotly_click', handlePlotClick);
+      }
+    }
+
+    function updateSegmentsPlot(result) {
+      if (!result.segments || !result.segments.segment_1 || !result.segments.segment_2) return;
+      document.getElementById('segmentsCard').classList.remove('hidden');
+      const s1 = result.segments.segment_1;
+      const s2 = result.segments.segment_2;
+      Plotly.newPlot('segmentsPlot', [
+        { x: s1.time_data, y: s1.signal_data, mode: 'lines', name: 'Segment 1', line: { color: '#6bcf7f', width: 2 } },
+        { x: s2.time_data, y: s2.signal_data, mode: 'lines', name: 'Segment 2', line: { color: '#74b9ff', width: 2 } }
+      ], {
+        paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#fafbfc',
+        font: { color: '#4a5568', family: 'Nunito' },
+        margin: { l: 50, r: 30, t: 30, b: 40 },
+        xaxis: { title: 'Время (с)', gridcolor: '#e2e8f0' },
+        yaxis: { title: 'Magnitude', gridcolor: '#e2e8f0' },
+        legend: { bgcolor: 'rgba(0,0,0,0)', x: 0, y: 1 }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    // ==================== РЕДАКТИРОВАНИЕ ТОЧЕК ====================
+    document.getElementById('editPointsBtn').onclick = () => {
+      if (!STATE.currentResult || !STATE.currentResult.points) {
+        log('Сначала запустите анализ', 'warn');
+        return;
+      }
+      STATE.editMode = true;
+      STATE.originalPoints = JSON.parse(JSON.stringify(STATE.currentResult.points));
+      STATE.editablePoints = JSON.parse(JSON.stringify(STATE.currentResult.points));
+      STATE.selectedPoint = null;
+      document.getElementById('editPointsBtn').classList.add('active');
+      document.getElementById('editPointsBtn').textContent = '✏️ Режим редактирования';
+      document.getElementById('savePointsBtn').classList.remove('hidden');
+      document.getElementById('cancelEditBtn').classList.remove('hidden');
+      document.getElementById('editBanner').classList.remove('hidden');
+      document.getElementById('editHint').textContent = 'Кликните на маркер точки, затем на новое место';
+      updatePointsDisplay();
+      updatePlots(STATE.currentResult);
+      log('Режим редактирования включён. Кликните на маркер точки для выбора.', 'step');
+    };
+
+    document.getElementById('cancelEditBtn').onclick = () => {
+      STATE.editMode = false;
+      STATE.selectedPoint = null;
+      document.getElementById('editPointsBtn').classList.remove('active');
+      document.getElementById('editPointsBtn').textContent = '✏️ Редактировать точки';
+      document.getElementById('savePointsBtn').classList.add('hidden');
+      document.getElementById('cancelEditBtn').classList.add('hidden');
+      document.getElementById('editBanner').classList.add('hidden');
+      document.getElementById('editHint').textContent = 'Кликните «Редактировать» для ручного выбора';
+      updatePointsDisplay();
+      updatePlots(STATE.currentResult);
+      log('Редактирование отменено', 'info');
+    };
+
+    document.getElementById('savePointsBtn').onclick = async () => {
+      STATE.editMode = false;
+      STATE.selectedPoint = null;
+      document.getElementById('editPointsBtn').classList.remove('active');
+      document.getElementById('editPointsBtn').textContent = '✏️ Редактировать точки';
+      document.getElementById('savePointsBtn').classList.add('hidden');
+      document.getElementById('cancelEditBtn').classList.add('hidden');
+      document.getElementById('editBanner').classList.add('hidden');
+
+      log('Пересчёт по новым точкам...', 'step');
+      document.getElementById('progressContainer').classList.remove('hidden');
+      document.getElementById('progressLabel').textContent = 'Пересчёт...';
+      document.getElementById('progressPercent').textContent = '50%';
+      document.getElementById('progressBar').style.width = '50%';
+
+      try {
+        const response = await fetch(API_URL + '/api/recalculate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ points: STATE.editablePoints })
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + await response.text());
+        const result = await response.json();
+        STATE.currentResult = result;
+        displayResults(result);
+        document.getElementById('progressBar').style.width = '100%';
+        log('Точки обновлены, результат пересчитан', 'success');
+      } catch (err) {
+        log('Ошибка пересчёта: ' + err.message, 'error');
+      }
+    };
+
+    function handlePlotClick(eventData) {
+      if (!STATE.editMode || !eventData || !eventData.points || eventData.points.length === 0) return;
+
+      const clickedPoint = eventData.points[0];
+      const clickX = clickedPoint.x;
+      const curveNumber = clickedPoint.curveNumber;
+      const pointNumber = clickedPoint.pointNumber;
+
+      if (clickX === undefined || clickX === null) return;
+
+      // Клик по маркеру точки (curveNumber > 0, т.к. 0 - это линия сигнала)
+      if (curveNumber > 0 && pointNumber === 0) {
+        const pointKeys = ['T1', 'T2', 'T3', 'T4', 'T5'];
+        const selectedKey = pointKeys[curveNumber - 1];
+        if (selectedKey && STATE.editablePoints[selectedKey] !== null) {
+          STATE.selectedPoint = selectedKey;
+          updatePointsDisplay();
+          updatePlotsWithEditablePoints();
+          log('Выбрана точка ' + selectedKey + '. Кликните на графике для перемещения.', 'info');
+        }
+      } else {
+        // Клик по линии сигнала - перемещаем выбранную точку
+        if (STATE.selectedPoint) {
+          STATE.editablePoints[STATE.selectedPoint] = clickX;
+          log('Точка ' + STATE.selectedPoint + ' перемещена на ' + clickX.toFixed(2) + ' с', 'info');
+
+          // Пересортировка точек по времени
+          const sorted = [];
+          for (const key in STATE.editablePoints) {
+            if (Object.prototype.hasOwnProperty.call(STATE.editablePoints, key)) {
+              const val = STATE.editablePoints[key];
+              if (val !== null) sorted.push({ key: key, val: val });
+            }
+          }
+          sorted.sort((a, b) => a.val - b.val);
+
+          const newPoints = { T1: null, T2: null, T3: null, T4: null, T5: null };
+          const order = ['T1', 'T2', 'T3', 'T4', 'T5'];
+          for (let i = 0; i < Math.min(sorted.length, 5); i++) {
+            newPoints[order[i]] = sorted[i].val;
+          }
+          STATE.editablePoints = newPoints;
+
+          STATE.selectedPoint = null;
+          updatePointsDisplay();
+          updatePlotsWithEditablePoints();
+        } else {
+          log('Сначала выберите точку, кликнув на её маркер', 'warn');
+        }
+      }
+    }
+
+    function updatePlotsWithEditablePoints() {
+      const tempResult = JSON.parse(JSON.stringify(STATE.currentResult));
+      tempResult.points = STATE.editablePoints;
+      updatePlots(tempResult);
+    }
+
+    log('Система готова к работе', 'success');
+    checkModelsStatus();
+
+    Plotly.newPlot('signalPlot', [], {
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#fafbfc',
+      font: { color: '#94a3b8', family: 'Nunito' },
+      xaxis: { title: 'Время (с)', gridcolor: '#e2e8f0' },
+      yaxis: { title: 'Amplitude', gridcolor: '#e2e8f0' },
+      annotations: [{ text: 'Загрузите данные и запустите анализ', showarrow: false, xref: 'paper', yref: 'paper', x: 0.5, y: 0.5, font: { size: 16, color: '#94a3b8' } }]
+    }, { responsive: true, displayModeBar: false });
+  </script>
+</body>
+
+</html>
