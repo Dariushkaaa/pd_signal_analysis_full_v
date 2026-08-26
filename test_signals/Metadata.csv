@@ -1,0 +1,2 @@
+version,device name,recording epoch time,recording time,recording timezone,platform,appVersion,device id,sensors,sampleRateMs,standardisation
+3,iPhone 12 Pro Max,1758528581407,2025-09-22_08-09-41,Europe/Moscow,ios,1.46,062ab51e-c259-48f3-b79c-4d1037436cff,Accelerometer|Gravity|Gyroscope|Orientation|Pedometer|Annotation|GyroscopeUncalibrated|AccelerometerUncalibrated,10|10|10|10|10||10|10,true
