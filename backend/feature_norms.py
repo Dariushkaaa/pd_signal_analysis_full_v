@@ -18,7 +18,7 @@ FEATURE_NORMS = {
         'upper_bound': 2.2,     # выше - избыточная вариативность
         'description': 'Энтропия выборки (регулярность)'
     },
-    'freeze_index': {
+    'freeze_index_mean': {
         'lower_bound': 0.0,
         'upper_bound': 0.15,    # выше 0.15 - признак фризкинга
         'description': 'Индекс застывания'

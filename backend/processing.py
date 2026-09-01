@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy.signal import butter, filtfilt, sosfiltfilt, detrend, find_peaks
+from scipy.signal import butter, filtfilt, sosfiltfilt, detrend, find_peaks, correlate
 from scipy.fft import rfft, rfftfreq
 from scipy.ndimage import median_filter
 import torch
@@ -13,15 +13,19 @@ CFG = {
     "win_sec_seg": 1.5, "step_sec_seg": 0.2, "acc_cutoff": 20.0, "gyr_cutoff": 15.0,
 }
 
+FS = CFG["target_fs"]
+
 WIN_SIZE_DET = int(CFG["target_fs"] * CFG["win_sec_det"])
 STEP_SIZE_DET = int(CFG["target_fs"] * CFG["step_sec_det"])
 WIN_SIZE_SEG = int(CFG["target_fs"] * CFG["win_sec_seg"])
 STEP_SIZE_SEG = int(CFG["target_fs"] * CFG["step_sec_seg"])
 
-# ВАЖНО: Верхний регистр 'X', чтобы совпадало с обученной моделью
-FEATURE_NAMES = ['cadence', 'sample_entropy', 'freeze_index', 'step_time_cv', 'X_std', 'X_rms', 'X_jerk_std']
+# Регистр 'X' сохранен для совпадения с моделью
+FEATURE_NAMES = ['cadence', 'sample_entropy', 'freeze_index_mean', 'step_time_cv', 'X_std', 'X_rms', 'X_jerk_std']
 
 _last_processed = {'df_proc': None}
+
+# --- ФИЛЬТРЫ И НОРМАЛИЗАЦИЯ ---
 
 def butter_lowpass(data, cutoff, fs, order=4):
     nyq = 0.5 * fs
@@ -32,6 +36,36 @@ def butter_highpass(data, cutoff, fs, order=2):
     nyq = 0.5 * fs
     sos = butter(order, cutoff / nyq, btype='high', analog=False, output='sos')
     return sosfiltfilt(sos, data)
+
+def butter_bandpass(data, lowcut=0.5, highcut=7.0, fs=FS, order=4):
+    """Полосовой фильтр Баттерворта 4-го порядка (по умолчанию 0.5–7 Гц)."""
+    try:
+        data = np.array(data, dtype=float)
+        if len(data) < 15:
+            return data
+        nyq = 0.5 * fs
+        low = lowcut / nyq
+        high = highcut / nyq
+        b, a = butter(order, [low, high], btype='bandpass')
+        return filtfilt(b, a, data)
+    except Exception:
+        return data
+
+def minmax_scale(data):
+    """MinMax нормализация в диапазон [0, 1]."""
+    data = np.array(data, dtype=float)
+    min_val = np.min(data)
+    max_val = np.max(data)
+    if max_val - min_val == 0:
+        return np.zeros_like(data)
+    return (data - min_val) / (max_val - min_val)
+
+def preprocess_signal_for_features(data, lowcut=0.5, highcut=7.0, fs=FS, order=4):
+    """Комбинированная предобработка: Баттерворт 0.5-7 Гц + MinMax нормализация."""
+    filtered = butter_bandpass(data, lowcut=lowcut, highcut=highcut, fs=fs, order=order)
+    return minmax_scale(filtered)
+
+# --- ИНФРАСТРУКТУРА ДЕТЕКЦИИ И СЕГМЕНТАЦИИ ---
 
 def calculate_imu_angles(df):
     acc_x, acc_y, acc_z = df["acc_x"].values, df["acc_y"].values, df["acc_z"].values
@@ -120,79 +154,170 @@ def extract_precise_timestamps(time_signals, point_seg_pred, det_pred, pred_segm
     timestamps["T2_turn1_start"], timestamps["T3_walk2_start"], timestamps["T4_turn2_start"] = t2, t3, t4
     return timestamps
 
-def bandpass_filter(signal, lowcut, highcut, fs=100, order=2):
-    nyq = 0.5 * fs
-    b, a = butter(order, [lowcut / nyq, highcut / nyq], btype='band')
-    return filtfilt(b, a, signal)
+# --- ДЕТЕКЦИЯ ПИКОВ И ВПАДИН (по отфильтрованному и нормализованному сигналу) ---
 
-def min_max_normalize(signal):
-    x_min, x_max = np.min(signal), np.max(signal)
-    return (signal - x_min) / (x_max - x_min) if (x_max - x_min) > 1e-10 else np.zeros_like(signal)
+def estimate_step_distance(signal):
+    signal = signal - np.mean(signal)
+    corr = correlate(signal, signal, mode='full')
+    corr = corr[len(corr) // 2:]
+
+    min_lag = int(FS * 0.3)
+    max_lag = int(FS * 1.2)
+    corr_range = corr[min_lag:max_lag]
+
+    if len(corr_range) == 0:
+        return int(FS * 0.5)
+
+    return np.argmax(corr_range) + min_lag
+
+def detect_peaks_advanced(signal):
+    """Детекция максимумов (пиков) на уже подготовленном сигнале."""
+    step_dist = estimate_step_distance(signal)
+    height = np.percentile(signal, 70)
+
+    peaks, _ = find_peaks(
+        signal,
+        distance=int(step_dist * 0.45),
+        height=height,
+        prominence=np.std(signal) * 0.3
+    )
+    return peaks
+
+def detect_troughs_advanced(signal):
+    """Детекция минимумов (впадин) на уже подготовленном сигнале."""
+    step_dist = estimate_step_distance(-signal)
+    height = np.percentile(-signal, 70)
+
+    troughs, _ = find_peaks(
+        -signal,
+        distance=int(step_dist * 0.45),
+        height=height,
+        prominence=np.std(-signal) * 0.3
+    )
+    return troughs
+
+# --- РАСЧЕТ ПРИЗНАКОВ ---
 
 def sample_entropy(signal, m=2, r=0.2):
+    """Расчет sample entropy."""
     try:
         signal = np.array(signal, dtype=float)
-        if len(signal) < 100 or np.std(signal) == 0: return np.nan
-        r_val = r * np.std(signal)
+        N = len(signal)
+        if N < 100: return np.nan
+        std_sig = np.std(signal)
+        if std_sig == 0: return np.nan
+        r_val = r * std_sig
+        
         def _phi(m_val):
-            x = np.array([signal[i:i+m_val] for i in range(len(signal) - m_val + 1)])
-            return float(np.sum([np.sum(np.max(np.abs(x - x_i), axis=1) <= r_val) - 1 for x_i in x]) / (len(signal) - m_val + 1))
-        phi_m, phi_m1 = _phi(m), _phi(m+1)
-        return float(-np.log(phi_m1 / phi_m)) if phi_m > 0 and phi_m1 > 0 else np.nan
-    except: return np.nan
+            x = np.array([signal[i:i+m_val] for i in range(N - m_val + 1)])
+            C = np.sum([np.sum(np.max(np.abs(x - x_i), axis=1) <= r_val) - 1 for x_i in x])
+            return C / (N - m_val + 1)
+        
+        phi_m = _phi(m)
+        phi_m1 = _phi(m+1)
+        if phi_m == 0 or phi_m1 == 0: return np.nan
+        return float(-np.log(phi_m1 / phi_m))
+    except Exception:
+        return np.nan
 
-def freeze_index(signal):
+def filter_for_freeze_index(signal, fs=FS, lowcut=0.5, highcut=15.0, order=4):
+    """Полосовой фильтр Баттерворта 4-го порядка специально для Freeze Index (0.5–15 Гц)."""
+    return butter_bandpass(signal, lowcut=lowcut, highcut=highcut, fs=fs, order=order)
+
+def freeze_index_sliding(signal, fs=FS, window_sec=4.0, step_sec=0.5):
+    """Расчет Freeze Index методом скользящего окна."""
     try:
-        yf = np.abs(rfft(signal))
-        xf = rfftfreq(len(signal), 1 / CFG["target_fs"])
-        p_loco = np.sum(yf[(xf >= 0.5) & (xf <= 3)])
-        p_freeze = np.sum(yf[(xf >= 3) & (xf <= 8)])
-        return float(p_freeze / p_loco) if p_loco > 0 else np.nan
-    except: return np.nan
+        signal = np.array(signal, dtype=float)
+        win_len = int(window_sec * fs)
+        step_len = int(step_sec * fs)
+
+        if len(signal) < win_len:
+            win_len = len(signal)
+            step_len = len(signal)
+
+        fi_list = []
+        for start in range(0, len(signal) - win_len + 1, step_len):
+            window = signal[start : start + win_len]
+
+            yf = np.abs(rfft(window))
+            xf = rfftfreq(len(window), 1 / fs)
+            power_spectrum = yf**2
+
+            locomotor = (xf >= 0.5) & (xf <= 3.0)
+            freeze = (xf >= 3.0) & (xf <= 8.0)
+
+            power_loco = np.sum(power_spectrum[locomotor])
+            power_freeze = np.sum(power_spectrum[freeze])
+
+            if power_loco > 0:
+                fi_list.append(power_freeze / power_loco)
+
+        if not fi_list:
+            return {"freeze_index_mean": np.nan, "freeze_index_max": np.nan}
+
+        return {
+            "freeze_index_mean": float(np.mean(fi_list)),
+            "freeze_index_max": float(np.max(fi_list)),
+        }
+    except Exception:
+        return {"freeze_index_mean": np.nan, "freeze_index_max": np.nan}
 
 def compute_all_segment_features(segment):
     features = {}
-    for axis in ['acc_x', 'acc_y', 'acc_z', 'acc_mag']:
-        signal = segment[axis].values
-        
-        # Для оси X применяем фильтрацию и нормализацию, как в оригинальном ноутбуке
-        if axis == 'acc_x':
-            sig_filt = bandpass_filter(signal, 0.5, 7.0, CFG["target_fs"], 2)
-            sig_norm = min_max_normalize(sig_filt)
-            
-            # Детекция пиков на нормализованном сигнале
-            peaks, _ = find_peaks(sig_norm, distance=40, height=0.3)
-            st_mean = st_std = st_cv = cad = np.nan
-            n_steps = 0
-            
-            if len(peaks) >= 2:
-                sts = np.diff(peaks) / CFG["target_fs"]
-                sts = sts[sts > 0]
-                if len(sts) > 0:
-                    st_mean, st_std = float(np.mean(sts)), float(np.std(sts))
-                    st_cv = st_std / st_mean if st_mean > 0 else np.nan
-                    cad = 60.0 / st_mean if st_mean > 0 else np.nan
-                    n_steps = len(sts)
-            
-            features.update({
-                'step_time_mean': st_mean, 'step_time_std': st_std, 'step_time_cv': st_cv,
-                'cadence': cad, 'n_steps': n_steps,
-                'sample_entropy': sample_entropy(sig_norm),
-                'freeze_index': freeze_index(sig_norm),
-                # ВАЖНО: Считаем эти признаки ИМЕННО от нормализованного сигнала!
-                'X_std': float(np.std(sig_norm)),
-                'X_rms': float(np.sqrt(np.mean(sig_norm**2))),
-                'X_jerk_std': float(np.std(np.diff(sig_norm) * CFG["target_fs"]))
-            })
+    
+    # 1. Предварительная фильтрация (0.5-7 Гц) и MinMax нормализация для общих признаков
+    raw_x = segment['acc_x'].values if 'acc_x' in segment.columns else segment['acc_mag'].values
+    prep_x = preprocess_signal_for_features(raw_x, lowcut=0.5, highcut=7.0, fs=FS, order=4)
+    
+    # Поиск пиков по отфильтрованному и нормализованному сигналу
+    peaks = detect_peaks_advanced(prep_x)
+    
+    if len(peaks) >= 2:
+        step_times = np.diff(peaks) / FS
+        step_times = step_times[step_times > 0]
+        if len(step_times) > 0:
+            step_time_mean = float(np.mean(step_times))
+            step_time_std = float(np.std(step_times))
+            step_time_cv = step_time_std / step_time_mean if step_time_mean > 0 else np.nan
+            cadence = 60.0 / step_time_mean if step_time_mean > 0 else np.nan
+            n_steps = len(step_times)
         else:
-            # Для остальных осей считаем базовую статистику от исходного сигнала
-            prefix = axis.replace('acc_', '')
-            features[f'{prefix}_rms'] = float(np.sqrt(np.mean(signal**2)))
-            features[f'{prefix}_std'] = float(np.std(signal))
-            features[f'{prefix}_jerk_std'] = float(np.std(np.diff(signal) * CFG["target_fs"]))
-            
-    return features
+            step_time_mean, step_time_std, step_time_cv, cadence, n_steps = np.nan, np.nan, np.nan, np.nan, 0
+    else:
+        step_time_mean, step_time_std, step_time_cv, cadence, n_steps = np.nan, np.nan, np.nan, np.nan, 0
 
+    raw_mag = segment['acc_mag'].values if 'acc_mag' in segment.columns else raw_x
+    prep_mag = preprocess_signal_for_features(raw_mag, lowcut=0.5, highcut=7.0, fs=FS, order=4)
+
+    features.update({
+        'step_time_mean': step_time_mean,
+        'step_time_std': step_time_std,
+        'step_time_cv': step_time_cv,
+        'cadence': cadence,
+        'n_steps': n_steps,
+        'sample_entropy': sample_entropy(prep_mag)
+    })
+
+    # 2. ИЗОЛИРОВАННЫЙ РАСЧЕТ FREEZE INDEX: полосовой фильтр (0.5–15 Гц), БЕЗ MinMax
+    x_filt_fi = filter_for_freeze_index(raw_x, fs=FS, lowcut=0.5, highcut=15.0, order=4)
+    fi_dict = freeze_index_sliding(x_filt_fi, fs=FS)
+    features.update(fi_dict)
+
+    # 3. Вычисление RMS, STD, Jerk STD по отфильтрованным (0.5–7 Гц) и нормализованным осям
+    for axis in ['acc_x', 'acc_y', 'acc_z', 'acc_mag']:
+        if axis not in segment.columns:
+            continue
+        
+        raw_signal = segment[axis].values
+        prep_signal = preprocess_signal_for_features(raw_signal, lowcut=0.5, highcut=7.0, fs=FS, order=4)
+        jerk = np.diff(prep_signal) * FS
+        
+        prefix = axis.replace('acc_', '').upper()
+        features[f'{prefix}_rms'] = float(np.sqrt(np.mean(prep_signal**2)))
+        features[f'{prefix}_std'] = float(np.std(prep_signal))
+        features[f'{prefix}_jerk_std'] = float(np.std(jerk))
+
+    return features
 
 def classify_features(features):
     print("\n" + "="*70)
@@ -200,9 +325,8 @@ def classify_features(features):
     for k, v in features.items():
         print(f"  {k}: {v}")
     
-    # ИСПРАВЛЕНО: Физиологически правдоподобные значения вместо 0.0
     safe_defaults = {
-        'cadence': 100.0, 'sample_entropy': 1.0, 'freeze_index': 0.1,
+        'cadence': 100.0, 'sample_entropy': 1.0, 'freeze_index_mean': 0.1,
         'step_time_cv': 0.05, 'X_std': 0.5, 'X_rms': 1.0, 'X_jerk_std': 10.0
     }
     
@@ -225,7 +349,6 @@ def classify_features(features):
     print(f"DEBUG: Prediction={prediction}, Probabilities={probs}\n")
     
     return {"prediction": prediction, "probability": float(probs[prediction])}
-
 
 def _build_result(points: Dict[str, float]) -> dict:
     global _last_processed
@@ -316,8 +439,6 @@ def recalculate_with_points(points: Dict[str, float]) -> dict:
     if _last_processed['df_proc'] is None:
         raise ValueError("Нет данных для пересчёта. Сначала запустите полный анализ.")
     return _build_result(points)
-
-
 
 def check_feature_norm(features: Dict[str, float], bounds: Dict[str, Dict]) -> Dict[str, Dict]:
     norm_check = {}
